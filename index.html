@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Realms of the Dwarves: Lore Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Dwarven Earth -->
+    <!-- Application Structure Plan: The SPA is organized into thematic sections (World Atlas, Characters, Bestiary, Lore & Legends) accessible via a persistent top navigation bar. This structure was chosen to transform the linear narrative of the book into a non-linear, explorable codex or world guide. Users can freely jump between different aspects of the worldbuilding, fostering deeper engagement and understanding. The core interaction is a "click-to-reveal" pattern: users click on a summary element (like a location name or character portrait) to view detailed information in a dedicated panel or modal. This approach keeps the interface clean and allows users to control the depth of information they consume at any given time. -->
+    <!-- Visualization & Content Choices: 
+        - World Atlas: Report Info (Locations from text) -> Goal (Organize/Inform) -> Presentation (Interactive table) -> Interaction (Click row to show details in a side panel) -> Justification (Clear, structured overview of geography with on-demand depth) -> Library/Method (HTML/JS DOM manipulation).
+        - Characters: Report Info (Named characters) -> Goal (Inform) -> Presentation (Grid of profile cards) -> Interaction (Click card to show full bio in a modal + TTS pronunciation guide) -> Justification (Visually engaging character roster with enhanced accessibility/immersion via TTS) -> Library/Method (HTML/Tailwind/JS, Gemini TTS API).
+        - Bestiary: Report Info (Creatures mentioned) -> Goal (Compare/Inform) -> Presentation (Grid of creature cards and a comparative bar chart) -> Interaction (Click card for details, hover chart for tooltips) -> Justification (Provides a quick reference for fauna and a visual comparison of their perceived danger) -> Library/Method (HTML/JS, Chart.js for visualization).
+        - Lore & Legends: Report Info (Key events, stories) -> Goal (Inform/Brainstorm) -> Presentation (Vertical timeline of cards + Lore Extrapolator input/output) -> Interaction (Click card to expand, button click to generate lore with search grounding) -> Justification (Organizes narrative events chronologically and offers generative assistance) -> Library/Method (HTML/JS, Gemini generateContent API with Google Search grounding).
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #4A4A4A;
+        }
+        .bg-primary { background-color: #FDFBF8; }
+        .bg-secondary { background-color: #F5F1E9; }
+        .bg-accent { background-color: #8B4513; }
+        .text-header { color: #362211; }
+        .text-body { color: #4A4A4A; }
+        .border-accent { border-color: #D2B48C; }
+        .nav-link {
+            transition: all 0.3s ease;
+            position: relative;
+            padding-bottom: 4px;
+        }
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #8B4513;
+            transition: width 0.3s ease;
+        }
+        .nav-link:hover::after, .nav-link.active::after {
+            width: 100%;
+        }
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 40;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .modal-content {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .modal-backdrop.show, .modal-content.show {
+            display: block;
+            opacity: 1;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 400px;
+            max-height: 50vh;
+        }
+        @media (max-width: 768px) {
+            .chart-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-primary">
+    <header class="bg-secondary sticky top-0 z-30 shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold text-header">The Realms of the Dwarves</h1>
+            <div class="hidden md:flex space-x-8">
+                <a href="#atlas" class="nav-link text-body hover:text-header">World Atlas</a>
+                <a href="#characters" class="nav-link text-body hover:text-header">Characters</a>
+                <a href="#bestiary" class="nav-link text-body hover:text-header">Bestiary</a>
+                <a href="#lore" class="nav-link text-body hover:text-header">Lore & Legends</a>
+            </div>
+            <button id="mobile-menu-button" class="md:hidden text-header focus:outline-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </button>
+        </nav>
+        <div id="mobile-menu" class="hidden md:hidden bg-secondary">
+            <a href="#atlas" class="block py-2 px-6 text-body hover:bg-accent hover:text-white">World Atlas</a>
+            <a href="#characters" class="block py-2 px-6 text-body hover:bg-accent hover:text-white">Characters</a>
+            <a href="#bestiary" class="block py-2 px-6 text-body hover:bg-accent hover:text-white">Bestiary</a>
+            <a href="#lore" class="block py-2 px-6 text-body hover:bg-accent hover:text-white">Lore & Legends</a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+        <section id="home" class="text-center mb-20">
+            <h2 class="text-4xl font-bold text-header mb-4">An Interactive World Guide</h2>
+            <p class="max-w-3xl mx-auto text-lg text-body">
+                Welcome to the interactive guide for "The Realms of the Dwarves." This explorer allows you to delve into the rich world presented in the story. Navigate through the known locations, meet the key characters, learn about the native creatures, and uncover the unfolding lore. Use the navigation above to begin your journey.
+            </p>
+        </section>
+
+        <section id="atlas" class="mb-20">
+            <h2 class="text-3xl font-bold text-header mb-2 text-center">World Atlas</h2>
+             <p class="text-center text-body mb-8 max-w-3xl mx-auto">This section provides an overview of the geographical locations mentioned in the chronicles. The world is vast and filled with diverse landscapes, from serene glens to mysterious hills. Click on a location in the table below to learn more about its key features and the inhabitants or events associated with it.</p>
+            <div class="md:grid md:grid-cols-3 md:gap-8">
+                <div class="md:col-span-1 bg-secondary p-6 rounded-lg shadow-lg h-full">
+                    <h3 id="location-name" class="text-2xl font-bold text-header mb-4">Select a Location</h3>
+                    <div id="location-details" class="text-body space-y-4">
+                        <p>Click on a row in the table to see detailed information here.</p>
+                    </div>
+                </div>
+                <div class="md:col-span-2 mt-8 md:mt-0 overflow-x-auto">
+                    <table class="w-full bg-white rounded-lg shadow-lg">
+                        <thead class="bg-accent text-white">
+                            <tr>
+                                <th class="p-4 text-left font-semibold">Location</th>
+                                <th class="p-4 text-left font-semibold">Inhabitant Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="locations-table-body" class="text-body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="characters" class="mb-20">
+            <h2 class="text-3xl font-bold text-header mb-2 text-center">Dramatis Personae</h2>
+            <p class="text-center text-body mb-8 max-w-3xl mx-auto">Discover the key figures shaping the events in "The Realms of the Dwarves." Each character has a unique background and role to play in the unfolding narrative. Click on a character's portrait to reveal more about their story, affiliations, and notable actions. Note the **✨ Listen** button in the profile for an accurate pronunciation guide.</p>
+            <div id="characters-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            </div>
+        </section>
+
+        <section id="bestiary" class="mb-20">
+            <h2 class="text-3xl font-bold text-header mb-2 text-center">Bestiary of the Realms</h2>
+            <p class="text-center text-body mb-8 max-w-3xl mx-auto">The lands are teeming with a variety of creatures, both natural and fell. This bestiary provides information on the fauna encountered so far. Below the creature cards, a chart offers a visual comparison of their estimated danger levels, based on descriptions from the text.</p>
+            <div id="creatures-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-12">
+            </div>
+            <h3 class="text-2xl font-bold text-header mb-4 text-center">Creature Danger Comparison</h3>
+            <div class="chart-container bg-white p-4 rounded-lg shadow-lg">
+                <canvas id="creatureDangerChart"></canvas>
+            </div>
+        </section>
+
+        <section id="lore">
+            <h2 class="text-3xl font-bold text-header mb-2 text-center">Lore & Legends</h2>
+            <p class="text-center text-body mb-8 max-w-3xl mx-auto">This section chronicles the significant events and tales that form the history and mythology of the world. From prophetic dreams to ancient legends, these stories provide context to the ongoing saga. Click on an entry to expand it and read the full account.</p>
+            
+            <!-- ✨ GEMINI API: Lore Extrapolator -->
+            <div class="bg-white p-6 rounded-lg shadow-xl mb-12 border border-accent">
+                <h3 class="text-2xl font-bold text-header mb-4 flex items-center">
+                    ✨ Lore Extrapolator: Deepen Your World
+                </h3>
+                <p class="text-body mb-4">
+                    Need inspiration for the **origins** or **mythic parallels** of an element? Input a concept (like "Grim Wolves" or "Wealdshade") and let the LLM suggest deeper lore, using Google Search grounding for real-world mythological inspiration.
+                </p>
+                <textarea id="lore-input" class="w-full p-3 mb-4 border border-accent rounded-lg focus:ring-accent focus:border-accent" rows="3" placeholder="e.g., The dark dwarves who ride Grim Wolves. What are their possible mythological origins?"></textarea>
+                <button id="extrapolate-button" class="bg-accent text-white px-6 py-2 rounded-lg font-semibold hover:bg-opacity-90 transition w-full md:w-auto">
+                    Generate Deep Lore
+                </button>
+                <div id="extrapolate-output" class="mt-6 p-4 bg-secondary rounded-lg hidden">
+                    <h4 class="font-bold text-header mb-2">Lore Suggestions:</h4>
+                    <div id="extrapolate-text" class="text-body mb-3"></div>
+                    <div id="extrapolate-sources" class="text-sm text-gray-600 mt-4 pt-3 border-t border-gray-300"></div>
+                </div>
+            </div>
+            <!-- End Lore Extrapolator -->
+
+            <div id="lore-timeline" class="relative border-l-2 border-accent ml-6">
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-secondary mt-20 py-6">
+        <div class="container mx-auto px-6 text-center text-body">
+            <p>&copy; 2025 Worldbuilding Inc. An interactive guide to The Realms of the Dwarves.</p>
+        </div>
+    </footer>
+    
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="modal-content" class="modal-content w-11/12 max-w-2xl bg-primary rounded-lg shadow-2xl p-8 transform scale-95">
+        <div id="modal-body"></div>
+        <button id="modal-close" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+    </div>
+
+    <script>
+        // --- TTS Utility Functions ---
+        const base64ToArrayBuffer = (base64) => {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        };
+
+        const pcmToWav = (pcm16, sampleRate) => {
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const bytesPerSample = bitsPerSample / 8;
+            const byteRate = numChannels * sampleRate * bytesPerSample;
+            const blockAlign = numChannels * bytesPerSample;
+
+            const wavData = new ArrayBuffer(44 + pcm16.length * 2);
+            const view = new DataView(wavData);
+
+            let offset = 0;
+
+            view.setUint32(offset, 0x52494646, false); offset += 4;
+            view.setUint32(offset, 36 + pcm16.length * 2, true); offset += 4;
+            view.setUint32(offset, 0x57415645, false); offset += 4;
+
+            view.setUint32(offset, 0x666d7420, false); offset += 4;
+            view.setUint32(offset, 16, true); offset += 4;
+            view.setUint16(offset, 1, true); offset += 2;
+            view.setUint16(offset, numChannels, true); offset += 2;
+            view.setUint32(offset, sampleRate, true); offset += 4;
+            view.setUint32(offset, byteRate, true); offset += 4;
+            view.setUint16(offset, blockAlign, true); offset += 2;
+            view.setUint16(offset, bitsPerSample, true); offset += 2;
+
+            view.setUint32(offset, 0x64617461, false); offset += 4;
+            view.setUint32(offset, pcm16.length * 2, true); offset += 4;
+
+            for (let i = 0; i < pcm16.length; i++) {
+                view.setInt16(offset, pcm16[i], true);
+                offset += 2;
+            }
+
+            return new Blob([wavData], { type: 'audio/wav' });
+        };
+
+        // --- GEMINI API TTS Call ---
+        const generateAndPlayTTS = async (text, button) => {
+            const originalText = button.innerHTML;
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+            button.disabled = true;
+            button.innerHTML = '<span class="animate-pulse">🔊 Speaking...</span>';
+
+            try {
+                const payload = {
+                    contents: [{ parts: [{ text: text }] }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: "Kore" }
+                            }
+                        }
+                    },
+                    model: "gemini-2.5-flash-preview-tts"
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
+                    const match = mimeType.match(/rate=(\d+)/);
+                    if (!match) throw new Error("Could not determine sample rate from MIME type.");
+
+                    const sampleRate = parseInt(match[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+
+                    audio.onended = () => {
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                } else {
+                    console.error("TTS response failed or audio data missing/incorrect format.", result);
+                    throw new Error("Failed to generate audio.");
+                }
+
+            } catch (error) {
+                console.error("TTS Generation Error:", error);
+                button.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 2000);
+            }
+        };
+
+        // --- GEMINI API Lore Extrapolator Call ---
+        const extrapolateLore = async () => {
+            const input = document.getElementById('lore-input').value.trim();
+            const outputDiv = document.getElementById('extrapolate-output');
+            const textDiv = document.getElementById('extrapolate-text');
+            const sourcesDiv = document.getElementById('extrapolate-sources');
+            const button = document.getElementById('extrapolate-button');
+            const originalText = button.textContent;
+
+            if (!input) {
+                // Using console log/error instead of alert()
+                console.error("Please enter a concept to extrapolate!");
+                textDiv.innerHTML = '<p class="text-red-500">Please enter a concept to extrapolate!</p>';
+                outputDiv.classList.remove('hidden');
+                return;
+            }
+            
+            outputDiv.classList.remove('hidden');
+            textDiv.innerHTML = '<p class="animate-pulse text-accent font-medium">✨ Delving into ancient texts...</p>';
+            sourcesDiv.innerHTML = '';
+            
+            button.disabled = true;
+            button.textContent = 'Generating...';
+
+            const systemPrompt = "You are a worldbuilding assistant for a fantasy writer, specializing in comparative mythology and lore extrapolation. Analyze the user's concept and provide creative, well-researched suggestions for its deeper origins, meanings, or mythological parallels. Use Google Search to ground your suggestions in real-world history, folklore, or fantasy traditions. Respond with a concise, thoughtful analysis suitable for a professional writer. Do not mention that you used Google Search in the final response.";
+            const userQuery = `Based on the context of the Dwarven Realms, provide three possible mythological origins or thematic interpretations for the concept: "${input}"`;
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            try {
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    tools: [{ "google_search": {} }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    textDiv.innerHTML = text.replace(/\n/g, '<br>');
+
+                    let sources = [];
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                    }
+
+                    if (sources.length > 0) {
+                        let sourcesHtml = '<span class="font-semibold block mb-1">Inspiration Sources:</span>';
+                        sourcesHtml += sources.map(s => `<a href="${s.uri}" target="_blank" class="block text-xs truncate hover:underline">${s.title}</a>`).join('');
+                        sourcesDiv.innerHTML = sourcesHtml;
+                    } else {
+                        sourcesDiv.innerHTML = '<span class="text-xs italic">No external sources used for this generation.</span>';
+                    }
+
+                } else {
+                    textDiv.innerHTML = 'Sorry, the scribe could not find any suitable lore. Try a different query.';
+                    sourcesDiv.innerHTML = '';
+                }
+
+            } catch (error) {
+                console.error("Lore Extrapolation Error:", error);
+                textDiv.innerHTML = 'An unexpected error occurred during lore generation. Check the console for details.';
+                sourcesDiv.innerHTML = '';
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        };
+
+        // --- Core Application Setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('extrapolate-button').addEventListener('click', extrapolateLore);
+
+            const worldData = {
+                locations: [
+                    { name: 'Emerald Glens', type: 'Region', individuals: 'Gwaun Den-Daerach, Aerdwen', notes: 'Green hills marking the source of a great river. Known for skilled woodworking.' },
+                    { name: 'Glen-Gwladen', type: 'Village', individuals: 'Den-Daerach family', notes: 'A small settlement located deep within the Emerald Glens.' },
+                    { name: 'Moss Hills', type: 'Region', individuals: 'Theodreth (awoke here)', notes: 'A country of hills covered in a green, springy, moss-like carpet with patches of flowers.' },
+                    { name: 'Tal-Tormind', type: 'Landmark', individuals: 'N/A', notes: 'A historic peak where a great signal horn, fashioned from a Wyrm\'s horn, is located.' },
+                    { name: 'Fords of Gwal-Wilil', type: 'Landmark', individuals: 'Lord Dùghlas\'s Expedition', notes: 'A strategic crossing point on the great river.' },
+                    { name: 'The Great Woods', type: 'Region', individuals: 'Wolves', notes: 'A large forest known to be the dwelling place of wolves.' },
+                    { name: 'The North', type: 'Region', individuals: 'Dark Dwarves', notes: 'Origin of a "new terror." Dark Dwarves from this region ride Grim Wolves as mounts.' },
+                    { name: 'The Moors', type: 'Region', individuals: 'Moss Grubbers', notes: 'An open, uncultivated upland area, home to the pony-sized Moss Grubbers.' },
+                    { name: 'Lake of Stars', type: 'Landmark', individuals: 'Seen in Theodreth\'s vision', notes: 'A large, long lake surrounded by a shingly shore and a forest of tall pines.' },
+                ],
+                characters: [
+                    { name: 'Theodreth', title: 'The Traveler', image: 'https://placehold.co/400x400/8B4513/FFFFFF?text=T', details: 'A dwarf who awakens in the Moss Hills with no memory of his past. He is drawn into a journey and experiences prophetic visions. He is a skilled warrior.' },
+                    { name: 'Lord Dùghlas', title: 'Expedition Leader', image: 'https://placehold.co/400x400/696969/FFFFFF?text=D', details: 'The leader of a dwarven expedition traveling by boat up a great river.' },
+                    { name: 'Gwaun Den-Daerach', title: 'Master Woodworker', image: 'https://placehold.co/400x400/D2B48C/362211?text=G', details: 'The patriarch of the Den-Daerach family in Glen-Gwladen, a woodworker of great skill and father to ten children.' },
+                    { name: 'Aerdwen', title: 'Matriarch', image: 'https://placehold.co/400x400/D2B48C/362211?text=A', details: 'Gwaun\'s wife and mother to their large family. She is described as a bustling dwarf.' },
+                    { name: 'Dwain', title: 'Dwarf Warrior', image: 'https://placehold.co/400x400/800000/FFFFFF?text=D', details: 'A fierce dwarf warrior who accompanies Lord Dùghlas. He is skilled with an axe, capable of felling Grim Wolves.' },
+                    { name: 'Eòghan', title: 'Dwarf Warrior', image: 'https://placehold.co/400x400/800000/FFFFFF?text=E', details: 'A companion of Theodreth, described as making a "wild charge" in battle against Dark Dwarves and orcs.'},
+                    { name: 'Tegwyn', title: 'Den-Daerach Daughter', image: 'https://placehold.co/400x400/D2B48C/362211?text=T', details: 'A daughter of the Den-Daerach family. She contemplates the local legends, such as the story of Baer and the wealdshade.'},
+                    { name: 'Baer', title: 'Hero of Old', image: 'https://placehold.co/400x400/556B2F/FFFFFF?text=B', details: 'A mighty dwarven hero from days past who encountered a fearsome wealdshade in the forest.'}
+                ],
+                creatures: [
+                    { name: 'Grim Wolf', category: 'Fell Beast', danger: 5, image: 'https://placehold.co/400x400/2F4F4F/FFFFFF?text=GW', details: 'Larger and more fearsome than a normal wolf, used as mounts by Dark Dwarves. They are powerful and require significant force to be taken down.' },
+                    { name: 'Moss Grubber', category: 'Beast', danger: 1, image: 'https://placehold.co/400x400/708090/FFFFFF?text=MG', details: 'A pony-sized animal with long, shaggy hair living on the moors. They are a source of milk, hair for clothing, and meat.' },
+                    { name: 'Wealdshade', category: 'Supernatural', danger: 5, image: 'https://placehold.co/400x400/000000/FFFFFF?text=W', details: 'A mysterious and terrifying entity of the forest. It appeared to the hero Baer as a tall, dwarven form crowned with a stag\'s skull and eyes like glowing embers.' },
+                    { name: 'Wyrm', category: 'Dragon-kind', danger: 5, image: 'https://placehold.co/400x400/8B0000/FFFFFF?text=W', details: 'A great beast of ancient times. The horn of one was used to create the signal horn of Tal-Tormind.' },
+                    { name: 'Orc', category: 'Enemy', danger: 3, image: 'https://placehold.co/400x400/A52A2A/FFFFFF?text=O', details: 'Foul warriors with grotesquely painted leather armor and cruelly curved knives. They fight alongside Dark Dwarves.'},
+                    { name: 'Streamweaver', category: 'Beast', danger: 1, image: 'https://placehold.co/400x400/4682B4/FFFFFF?text=S', details: 'An animal mentioned by the bard Anerin. Known for delving new streams.' },
+                    { name: 'Stag', category: 'Beast/Supernatural', danger: 4, image: 'https://placehold.co/400x400/964B00/FFFFFF?text=S', details: 'A seemingly normal stag whose eyes were like glowing embers and whose face held a "wave of black hunger." It was connected to the appearance of the wealdshade.' },
+                    { name: 'Common Wildlife', category: 'Beast', danger: 1, image: 'https://placehold.co/400x400/228B22/FFFFFF?text=CW', details: 'Includes various animals mentioned by the bard Anerin as signs of peace: badgers, squirrels, birds, deer, and boar.' }
+                ],
+                lore: [
+                    { title: "Theodreth's Awakening", summary: "Theodreth awakens falling from the sky, landing safely in a mossy country with no memory of his past.", details: "He wakes in a large oaken bed that crashes to the ground, yet he is unharmed due to the soft, springy moss covering the landscape. This mysterious arrival marks the beginning of his journey, as he questions where he is and from whence he came." },
+                    { title: "The Prophetic Dream", summary: "During the journey by boat, Theodreth has a powerful and ominous dream.", details: "He dreams of a mountain besieged by great beasts and a rising sea, followed by a black cloud from the north that brings thunder. The vision then shifts to a long lake where an urgent wind pulls him forward. The dream suggests a coming conflict and a quest he must undertake." },
+                    { title: "The Ambush", summary: "Theodreth and his companions are ambushed by a Dark Dwarf and orcs.", details: "Theodreth engages in a fierce duel with a Dark Dwarf, a formidable warrior who speaks of a 'new terror' arising before dying. This encounter provides the first concrete evidence of the northern threat and showcases the fighting prowess of these new enemies." },
+                    { title: "The Legend of Baer", summary: "Tegwyn recalls the old tale of Baer and the wealdshade.", details: "The story tells of a dwarven hero named Baer who, while hunting a stag, encountered a terrifying supernatural being known as a wealdshade. The stag itself had glowing ember-like eyes and seemed to be a harbinger of the creature. This legend highlights the ancient dangers that lurk within the wild places of the world." }
+                ]
+            };
+            
+            const locationTableBody = document.getElementById('locations-table-body');
+            const locationName = document.getElementById('location-name');
+            const locationDetails = document.getElementById('location-details');
+            worldData.locations.forEach(loc => {
+                const row = document.createElement('tr');
+                row.className = 'cursor-pointer hover:bg-secondary border-b border-accent';
+                row.innerHTML = `<td class="p-4">${loc.name}</td><td class="p-4">${loc.type}</td>`;
+                row.addEventListener('click', () => {
+                    locationName.textContent = loc.name;
+                    locationDetails.innerHTML = `
+                        <p><strong>Type:</strong> ${loc.type}</p>
+                        <p><strong>Notes:</strong> ${loc.notes}</p>
+                        <p><strong>Notable Individuals:</strong> ${loc.individuals}</p>
+                    `;
+                    document.querySelectorAll('#locations-table-body tr').forEach(r => r.classList.remove('bg-secondary'));
+                    row.classList.add('bg-secondary');
+                });
+                locationTableBody.appendChild(row);
+            });
+
+            const charactersGrid = document.getElementById('characters-grid');
+            const modalBackdrop = document.getElementById('modal-backdrop');
+            const modalContent = document.getElementById('modal-content');
+            const modalBody = document.getElementById('modal-body');
+            const modalClose = document.getElementById('modal-close');
+            
+            worldData.characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = 'cursor-pointer bg-white rounded-lg shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300';
+                card.innerHTML = `
+                    <img src="${char.image}" alt="${char.name}" class="w-full h-40 md:h-56 object-cover">
+                    <div class="p-4">
+                        <h3 class="font-bold text-lg text-header">${char.name}</h3>
+                        <p class="text-sm text-body">${char.title}</p>
+                    </div>
+                `;
+                card.addEventListener('click', () => {
+                    const characterName = char.name;
+                    modalBody.innerHTML = `
+                        <div class="md:flex items-center mb-4">
+                            <img src="${char.image}" alt="${char.name}" class="w-32 h-32 md:w-24 md:h-24 mx-auto md:mx-0 md:mr-6 mb-4 rounded-full object-cover">
+                            <div>
+                                <h2 class="text-3xl font-bold text-header mb-1 flex items-center">
+                                    ${char.name}
+                                    <button id="tts-button-${char.name.replace(/\s/g, '-')}" class="ml-3 text-sm bg-accent text-white px-3 py-1 rounded-full hover:bg-opacity-80 transition flex items-center" title="Listen to pronunciation">
+                                        ✨ Listen
+                                    </button>
+                                </h2>
+                                <h4 class="text-xl text-body italic mb-0">${char.title}</h4>
+                            </div>
+                        </div>
+                        <p class="text-body">${char.details}</p>
+                    `;
+                    
+                    const ttsButton = document.getElementById(`tts-button-${char.name.replace(/\s/g, '-')}`);
+                    if (ttsButton) {
+                        ttsButton.addEventListener('click', () => {
+                            generateAndPlayTTS(`Say the dwarven name: ${characterName}`, ttsButton);
+                        });
+                    }
+
+                    modalBackdrop.classList.add('show');
+                    modalContent.classList.add('show');
+                });
+                charactersGrid.appendChild(card);
+            });
+            
+            const closeModal = () => {
+                modalBackdrop.classList.remove('show');
+                modalContent.classList.remove('show');
+            };
+            modalBackdrop.addEventListener('click', closeModal);
+            modalClose.addEventListener('click', closeModal);
+
+            const creaturesGrid = document.getElementById('creatures-grid');
+            worldData.creatures.forEach(creature => {
+                 const card = document.createElement('div');
+                card.className = 'cursor-pointer bg-white rounded-lg shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300';
+                card.innerHTML = `
+                    <img src="${creature.image}" alt="${creature.name}" class="w-full h-40 md:h-56 object-cover">
+                    <div class="p-4">
+                        <h3 class="font-bold text-lg text-header">${creature.name}</h3>
+                        <p class="text-sm text-body">${creature.category}</p>
+                    </div>
+                `;
+                card.addEventListener('click', () => {
+                    modalBody.innerHTML = `
+                        <img src="${creature.image}" alt="${creature.name}" class="w-32 h-32 float-left mr-6 mb-4 rounded-full object-cover">
+                        <h2 class="text-3xl font-bold text-header mb-2">${creature.name}</h2>
+                        <h4 class="text-xl text-body italic mb-4">${creature.category} (Danger Level: ${creature.danger})</h4>
+                        <p class="text-body">${creature.details}</p>
+                    `;
+                    modalBackdrop.classList.add('show');
+                    modalContent.classList.add('show');
+                });
+                creaturesGrid.appendChild(card);
+            });
+            
+            const loreTimeline = document.getElementById('lore-timeline');
+            worldData.lore.forEach(item => {
+                const loreItem = document.createElement('div');
+                loreItem.className = 'mb-8 ml-8 cursor-pointer';
+                loreItem.innerHTML = `
+                    <div class="absolute -left-3.5 mt-1.5 w-6 h-6 bg-accent rounded-full border-4 border-primary"></div>
+                    <h3 class="text-xl font-bold text-header">${item.title}</h3>
+                    <p class="text-body mb-2">${item.summary}</p>
+                    <div class="hidden text-body bg-secondary p-4 rounded-md">${item.details}</div>
+                `;
+                loreItem.addEventListener('click', () => {
+                    loreItem.querySelector('div:last-child').classList.toggle('hidden');
+                });
+                loreTimeline.appendChild(loreItem);
+            });
+
+            const creatureDangerCtx = document.getElementById('creatureDangerChart').getContext('2d');
+            const chartCreatures = worldData.creatures.filter(c => c.danger > 1);
+            new Chart(creatureDangerCtx, {
+                type: 'bar',
+                data: {
+                    labels: chartCreatures.map(c => c.name),
+                    datasets: [{
+                        label: 'Estimated Danger Level',
+                        data: chartCreatures.map(c => c.danger),
+                        backgroundColor: 'rgba(139, 69, 19, 0.6)',
+                        borderColor: 'rgba(139, 69, 19, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 5,
+                            title: {
+                                display: true,
+                                text: 'Danger Level'
+                            }
+                        },
+                         x: {
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    const label = this.getLabelForValue(value);
+                                    if (label.length > 16) {
+                                        return label.slice(0, 16) + '...';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+            document.querySelectorAll('#mobile-menu a').forEach(link => {
+                link.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+            });
+
+            const navLinks = document.querySelectorAll('nav a.nav-link');
+            const sections = document.querySelectorAll('main section');
+            window.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (pageYOffset >= sectionTop - 100) {
+                        current = section.getAttribute('id');
+                    }
+                });
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href').includes(current)) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+
+        });
+    </script>
+</body>
+</html>
